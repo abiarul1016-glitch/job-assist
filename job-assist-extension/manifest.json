@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Job Assist",
+  "version": "1.0",
+  "description": "Smarter Google Autofill, to whiz through job applications, quicker.",
+
+  "content_scripts": [
+    {
+      "js": ["scripts/content.js"],
+      "matches": ["http://127.0.0.1:3000/*", "<all_urls>"]
+    }
+  ]
+
+}
