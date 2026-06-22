@@ -7,10 +7,23 @@ runApplication()
 
 async function runApplication() {
 
+    // establish new context
+    PAGE_TEXT_CONTENT = ''
+    jobContextReady = null
+    const newAIContext = await newAI()
+
+    if (!newAIContext) {
+        console.error('Failed to initialize a clean AI context session. Aborting.');
+        document.body.removeAttribute('data-autofill-processed')
+        return;
+    }
+    console.log(newAIContext)
+
     MASTER_PROFILE = await getMasterProfile()
     
     if (!MASTER_PROFILE) {
         console.log('The application cannot reach the Master Profile which is required. Please ensure the FastAPI server is running to continue.')
+        document.body.removeAttribute('data-autofill-processed')
         return
     }
 
@@ -19,11 +32,11 @@ async function runApplication() {
 
     // give the AI context of the page
     // NOTE: need safety mechanism for askAI later, as we are unsure that updateAI is complete by the time it gets there.
-    scrapeJobDetails()
+    await scrapeJobDetails()
     jobContextReady = updateAIJobContext()
     
-    // get input fields - abstract
-    const inputFields = document.querySelectorAll('input, textarea, select')
+    // get as many input fields as possible
+    const inputFields = document.querySelectorAll('input, textarea, select, [contenteditable="true"], [role="textbox"]')
     
     // given an input field: pipeline
     for (const inputField of inputFields) {
@@ -31,6 +44,8 @@ async function runApplication() {
         await inputFieldPipeline(inputField)
 
     }
+
+    console.log("Autofill Pipeline execution complete!")
 
 }
 
@@ -189,16 +204,8 @@ async function inputFieldPipeline(inputField) {
     }
 
 
-    // identify where the text content would be depending on the input type. NOTE: MUST STILL CONSIDER LABELS
-    if (inputFieldDetails['type'] === 'INPUT') {
-
-        text_content = inputField.placeholder
-        
-    } else if (inputFieldDetails['type'] === 'TEXTAREA') {
-        
-        text_content = inputField.textContent
-        
-    }
+    // extract text content
+    let text_content = await extractFieldContext(inputField)
     
     if (text_content) {
 
@@ -213,7 +220,7 @@ async function inputFieldPipeline(inputField) {
     
 
     // first pass, of simple matching - and filling in response
-    if (inputFieldDetails.text_content.length <= 25) {
+    if (inputFieldDetails.text_content.length <= 20) {
         
         let match = await directMatch(inputFieldDetails.text_content)
         
@@ -232,14 +239,24 @@ async function inputFieldPipeline(inputField) {
             // given the key returned by the fuzzyMatch function (server-side), index into to, to associate the answer for the input with it
             inputFieldDetails['answer'] = MASTER_PROFILE[match]
             
-        } else {
+        }
+        
+        else {
 
-            inputFieldDetails['answer'] = await askAI(inputFieldDetails.text_content)
-            console.log('AI Match: ', inputFieldDetails['answer'])
+            // let user handle empty, simple field
+            return
 
         }
 
-    } else {
+        // commenting out later, to avoid uneeded LLM usage, can implement back in later.
+        // else {
+
+        //     inputFieldDetails['answer'] = await askAI(inputFieldDetails.text_content)
+        //     console.log('AI Match: ', inputFieldDetails['answer'])
+
+        // }
+
+    } else if (inputFieldDetails.text_content.includes('?')) {
         
         // third pass - genAI response
         inputFieldDetails['answer'] = await askAI(inputFieldDetails.text_content)
@@ -255,14 +272,90 @@ async function inputFieldPipeline(inputField) {
 }
 
 
+async function extractFieldContext(inputField) {
+    
+    let contextText = "";
+
+    // 1. Check for standard placeholders or standard text elements
+    if (inputField.placeholder) {
+        contextText = inputField.placeholder;
+    }
+
+    // 2. Check for explicit HTML Labels using the "for" attribute
+    if (!contextText && inputField.id) {
+        const explicitLabel = document.querySelector(`label[for="${CSS.escape(inputField.id)}"]`);
+        if (explicitLabel) {
+            contextText = explicitLabel.innerText;
+        }
+    }
+
+    // 3. Check for implicit/nested HTML labels (where the input is inside a label tag)
+    if (!contextText) {
+        const parentLabel = inputField.closest('label');
+        if (parentLabel) {
+            // Use a regex trick to filter out text belonging to nested elements if needed
+            contextText = parentLabel.innerText;
+        }
+    }
+
+    // 4. Check Accessibility (ARIA) Labels - heavily used by modern React/Vue forms
+    if (!contextText) {
+        contextText = inputField.getAttribute('aria-label') || 
+                      inputField.getAttribute('aria-placeholder');
+    }
+
+    // 5. Fallback to the raw HTML name or ID attribute (e.g. name="first_name" gives great context)
+    if (!contextText) {
+        contextText = inputField.getAttribute('name') || inputField.id || "";
+    }
+
+    // Clean up extra whitespace, newlines, and trailing colons common in labels (e.g. "First Name:" -> "First Name")
+    return contextText.replace(/\s+/g, ' ').replace(/:$/, '').replace(/[*:]/g, '').trim();
+
+}
+
+
 async function simpleFill(inputFieldDetails) {
     
-    inputFieldDetails.inputField.value = inputFieldDetails.answer
+    const element = inputFieldDetails.inputField;
+    const val = inputFieldDetails.answer;
 
-    // needed to force frameworks to register change
-    inputFieldDetails.inputField.dispatchEvent(new Event('input', { bubbles: true }));
-    inputFieldDetails.inputField.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!element || !val) return;
 
+    element.focus();
+
+    // METHOD 1: The standard approach for traditional fields
+    if (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.tagName === 'SELECT') {
+        element.value = val;
+    } 
+    // METHOD 2: Fallback for custom rich-text/div fields (e.g. contenteditable)
+    else {
+        element.innerText = val;
+    }
+
+    // METHOD 3: The Framework Backdoor (Crucial for React 16+)
+    // Frameworks often intercept standard setters. We can force a native value update:
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 
+        'value'
+    )?.set;
+    
+    const nativeTextAreaValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 
+        'value'
+    )?.set;
+
+    if (element.tagName === 'INPUT' && nativeInputValueSetter) {
+        nativeInputValueSetter.call(element, val);
+    } else if (element.tagName === 'TEXTAREA' && nativeTextAreaValueSetter) {
+        nativeTextAreaValueSetter.call(element, val);
+    }
+
+    // METHOD 4: Fire comprehensive updates so the page processes the change
+    const events = ['input', 'change', 'blur'];
+    events.forEach(eventType => {
+        element.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
+    });
 
 }
 
