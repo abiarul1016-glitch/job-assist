@@ -2,8 +2,103 @@ const MAIN_URL = 'https://incubous-caitlyn-herby.ngrok-free.dev'
 let PAGE_TEXT_CONTENT = ''
 let jobContextReady = null
 
-// MAIN CODE
-runApplication()
+let currentUrl = window.location.href;
+let formObserver = null;
+let scanTimeout = null;
+
+// MAIN CODE ENTRY POINT
+initContinuousWatcher();
+
+function initContinuousWatcher() {
+    console.log("Continuous Stream Input Watcher Activated...");
+    
+    // 1. Initial page sweep
+    triggerFieldScan();
+
+    // 2. Keep an eye on URL adjustments (for major page jumps)
+    setInterval(() => {
+        if (window.location.href !== currentUrl) {
+            currentUrl = window.location.href;
+            console.log("SPA Page Jump Detected. Resetting Context.");
+            // Wipe out context for the completely new page layout
+            PAGE_TEXT_CONTENT = '';
+            jobContextReady = null;
+            triggerFieldScan();
+        }
+    }, 1000);
+
+    // 3. Continuous DOM Input Watcher
+    observeInjectedFields();
+}
+
+function triggerFieldScan() {
+    clearTimeout(scanTimeout);
+    
+    // Debounce processing to batches (handles multiple fields popping up together)
+    scanTimeout = setTimeout(async () => {
+        // Target fields that DO NOT have our processed marker yet
+        const freshFields = document.querySelectorAll(
+            'input:not([data-autofill-scanned]), ' +
+            'textarea:not([data-autofill-scanned]), ' +
+            'select:not([data-autofill-scanned]), ' +
+            '[contenteditable="true"]:not([data-autofill-scanned]), ' +
+            '[role="textbox"]:not([data-autofill-scanned])'
+        );
+
+        if (freshFields.length === 0) return;
+
+        console.log(`Continuous Watcher caught ${freshFields.length} new fields.`);
+
+        // Ensure background AI session exists before filling anything
+        if (!jobContextReady) {
+            await initializeSessionAndContext();
+        }
+
+        // Process ONLY the new fields
+        for (const field of freshFields) {
+            // Mark them immediately to prevent duplicate async processing loops
+            field.setAttribute('data-autofill-scanned', 'true');
+            await inputFieldPipeline(field);
+        }
+    }, 400); // 400ms is perfect for dynamic elements appearing on screen
+}
+
+function observeInjectedFields() {
+    if (formObserver) formObserver.disconnect();
+
+    formObserver = new MutationObserver((mutations) => {
+        let shouldScan = false;
+        
+        for (let mutation of mutations) {
+            // Check if actual elements are being injected into the page structure
+            if (mutation.addedNodes.length > 0) {
+                shouldScan = true;
+                break;
+            }
+        }
+
+        if (shouldScan) {
+            triggerFieldScan();
+        }
+    });
+
+    // Subtree: true ensures we watch deep inside nested dynamic grids like "Add Another"
+    formObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Extracted core setup into its own block so the pipeline can wake up on demand
+async function initializeSessionAndContext() {
+    const sessionInitialized = await newAI();
+    if (!sessionInitialized) return;
+
+    MASTER_PROFILE = await getMasterProfile();
+    if (!MASTER_PROFILE) return;
+
+    scrapeJobDetails();
+    jobContextReady = updateAIJobContext();
+}
+
+
 
 async function runApplication() {
 

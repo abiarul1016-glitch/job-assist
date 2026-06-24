@@ -1,0 +1,11 @@
+[project]
+name = "job-assist"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard-no-fastapi-cloud-cli]>=0.138.0",
+    "ollama>=0.6.2",
+    "rapidfuzz>=3.14.5",
+]

@@ -1,0 +1,18 @@
+firstname = Abishan
+lastname = Arulselvan
+
+contact
+phone-number = 6475623968
+phonetype = mobile
+country-code = +1
+
+email = abiarul1016@gmail.com
+school_email = aarulsel@uwaterloo.ca
+
+education
+
+
+
+
+writing style
+sample writing
