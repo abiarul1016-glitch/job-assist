@@ -163,9 +163,9 @@ user_data = {
         {
             "issuer": "Harvard CS50",
             "location": "Cambridge, Massachusetts",
-            "certification": "CS50's Introduction to Programming with Python",
+            "certification": "CS50's Introduction to Computer Programming",
             "url": "https://cs50.harvard.edu/certificates/c050320c-e34a-42eb-a1c7-81eb14e23551",
-            "date": "Sep. 2025 -- April 2026",
+            "date": "Sep. 2025 -- Jan. 2026",
         },
     ],
     "experience": [
@@ -188,18 +188,7 @@ user_data = {
             "url": "",
             "bullets": [
                 "Self-taught photographer, videographer, and editor producing promotional, commercial, and event-based media",
-                "Selected as official photographer and videographer for SpurHacks, one of Canada’s largest hackathons",
-            ],
-        },
-        {
-            "company": "Tech Corp",
-            "location": "Remote",
-            "role": "Software Engineer",
-            "date": "June 2024 -- Present",
-            "url": "",
-            "bullets": [
-                "Developed scalable features using Python and Flask, improving system uptime.",
-                "Collaborated with cross-functional teams to deliver projects ahead of schedule.",
+                "Selected as official photographer and videographer for SpurHacks, one of Canada's largest hackathons",
             ],
         },
     ],
@@ -277,74 +266,54 @@ user_data = {
 
 def main():
 
-    job_description = "This is a software internship job at Google for undergraduate students. Your role will primarily involve QA (Quality Assurance), so having knowledge of automation frameworks such as Playwright, would be useful."
+    job_description = input(
+        "Enter the job description you wish to generate a resume and cover letter for: "
+    )
 
     prompt_content = f"""
-    You are an expert resume optimizer, who tailors resumes for given job descriptions.
-    Process the following input profile data to tailor it to this job description:
     
+    You are an expert AI resume writer specializing in Applicant Tracking Systems (ATS) optimization. 
+    Your task is to tailor the user's resume data to perfectly match a target job description.
+
+    ### 1. TARGET JOB DESCRIPTION
     {job_description}
-    
-    .
-    You must adhere completely to the structural boundaries provided by the schema.
-    Don't use special characters, only use plain text, as this will be used for job applications, and be generated via a LaTex editor.
-    Ensure the improved bullet points utilize keywords, so that the resume is easily scannable by ATS and recruiters. They must also follow the STAR/CAR convention.
 
-    CRITICAL INSTRUCTIONS:
-    - You must include exactly 2 or 3 highly optimized bullet points for each experience item and project item. 
-    - Do not exceed 3 bullet points per item under any circumstance.
-    - Keep the contact and education blocks strictly identical to the input.
-
-
-    Input Profile Data:
+    ### 2. INPUT PROFILE DATA (JSON format)
     {json.dumps(user_data, indent=2)}
+
+    CRITICAL FILTERING & LENGTH RULES:
+    1. EXPERIENCE FILTER: The user data contains multiple experiences. You must evaluate them and select EXACTLY the top 2 most relevant experiences for the job description. Discard the rest.
+    2. PROJECT FILTER: Select up to 3 of the most relevant projects. 
+    3. CERTIFICATION FILTER: Select up to 2 certifications.
+    4. BULLET COUNT: Every single item in 'experience' and 'projects' must contain exactly 2 or 3 bullet points. Never provide 1 bullet point; never exceed 3 bullet points.
+
+    ### 3. CRITICAL STRUCTURAL CONSTRAINTS
+    - **Output Schema:** You must adhere 100% to the provided JSON structural boundaries. Do not alter keys or nestings.
+    - **Strict Bullet Count:** Generate exactly 2 or 3 bullet points for each experience item and project item. Never exceed 3 bullet points under any circumstance.
+    - **Immutable Blocks:** Keep the "contact" and "education" blocks completely identical to the input data. Do not modify, add, or delete any characters within them.
+    - **LaTeX Safety:** Use plain text only. Do not use special characters (e.g., %, $, &, _, #) without proper text-only formatting. Avoid Markdown bolding (**) or italics (*) inside the string fields.
+
+    ### 4. BULLET POINT CONTENT QUALITY
+    - **STAR/CAR Formula:** Write every bullet point using the Situation/Task/Context -> Action -> Result framework. 
+    - **Impact First:** Start bullet points with strong action verbs and emphasize quantifiable metrics or technical outcomes wherever possible.
+    - **ATS Optimization:** Seamlessly integrate highly relevant keywords and technical skills found in the target job description to maximize resume scannability.
+
+    Return only the optimized JSON object following these rules.
 
     """
 
-    max_retries = 3
-    messages = [{"role": "user", "content": prompt_content}]
-
-    for attempt in range(max_retries):
-        print(f"Generation Attempt {attempt + 1}/{max_retries}...")
-
-        try:
-            # Execute chat with format constraint
-            response = chat(
-                model="qwen3.5:9b",
-                messages=messages,
-                options={"temperature": 0.0},
-                format=ResumeSchema.model_json_schema(),
-                think=False,
-            )
-
-            # Attempt Pydantic validation
-            validated_data = ResumeSchema.model_validate_json(response.message.content)
-            print("Successfully validated JSON against Pydantic schema!")
-
-            generate_resume(validated_data)
-            return
-
-        except ValidationError as ve:
-            print(f" Validation failed on attempt {attempt + 1}.")
-
-            # Format the exact errors to hand back to the LLM
-            error_feedback = f"""
-            Your previous JSON output failed Pydantic validation with the following errors:
-            {str(ve)}
-            
-            Please correct your mistakes and output a perfectly compliant JSON structure.
-            """
-
-            # Append the failed output and the error message to the history
-            messages.append({"role": "assistant", "content": response.message.content})
-            messages.append({"role": "user", "content": error_feedback})
-
-        except Exception as e:
-            print(f"An unexpected API or decoding error occurred: {e}")
-
-    raise RuntimeError(
-        f"Failed to generate valid profile structure after {max_retries} attempts."
+    response = chat(
+        model="qwen3.5:9b",
+        messages=[
+            {"role": "user", "content": prompt_content},
+        ],
+        think=False,
     )
+
+    model_response = json.loads(response.message.content)
+
+    print(json.dumps(model_response, indent=2))
+    generate_resume(model_response)
 
 
 def generate_resume(
