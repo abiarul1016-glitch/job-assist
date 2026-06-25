@@ -1,133 +1,12 @@
 import json
 import os
 import subprocess
-from typing import List, Literal
+from datetime import datetime
 
 from jinja2 import Environment, FileSystemLoader
 from ollama import chat
-from pydantic import BaseModel, Field, ValidationError
 
 template_path = "Template-Jakes-Resume.tex"
-
-# --- Sub-models for structured nesting ---
-
-
-class ContactSchema(BaseModel):
-    # Freezing these exact strings so the LLM cannot mutate them
-    name: Literal["Abishan Arulselvan"] = "Abishan Arulselvan"
-    phone: Literal["647-562-3968"] = "647-562-3968"
-    email: Literal["abiarul1016@gmail.com"] = "abiarul1016@gmail.com"
-    linkedin: Literal["linkedin.com/in/abishan-arulselvan"] = (
-        "linkedin.com/in/abishan-arulselvan"
-    )
-    github: Literal["github.com/abiarul1016-glitch"] = "github.com/abiarul1016-glitch"
-
-
-class EducationItem(BaseModel):
-    school: str
-    location: str
-    degree: str
-    date: str
-
-
-class CertificationItem(BaseModel):
-    issuer: str
-    location: str
-    certification: str
-    url: str
-    date: str
-
-
-class ExperienceItem(BaseModel):
-    company: str
-    location: str
-    role: str
-    date: str
-    url: str
-    # Constraint: Enforces exactly 2 to 3 bullet items per experience
-    bullets: List[str] = Field(
-        ...,
-        min_length=2,
-        max_length=3,
-        description="Array containing exactly 2 to 3 bullet points describing achievements.",
-    )
-
-
-class ProjectItem(BaseModel):
-    title: str
-    url: str
-    technologies: str
-    date: str
-    # Constraint: Enforces exactly 2 to 3 bullet items per project
-    bullets: List[str] = Field(
-        ...,
-        min_length=2,
-        max_length=3,
-        description="Array containing exactly 2 to 3 bullet points highlighting technical execution.",
-    )
-
-
-class SkillsSchema(BaseModel):
-    languages: str
-    frameworks: str
-    tools: str
-    libraries: str
-
-
-# --- Master Profile Schema containing constraints ---
-
-
-class ResumeSchema(BaseModel):
-    contact: ContactSchema = Field(
-        ..., description="Static contact information. Do not alter."
-    )
-
-    # Enforcing the specific static education history using standard tuple/list layout
-    education: List[EducationItem] = Field(
-        default=[
-            EducationItem(
-                school="University of Waterloo",
-                location="Waterloo, ON",
-                degree="Bachelor of Math, Finance Specialization",
-                date="Sep. 2026 -- Present",
-            ),
-            EducationItem(
-                school="Turner Fenton Secondary School",
-                location="Brampton, ON",
-                degree="International Baccalaureate",
-                date="Sep. 2022 -- June 2026",
-            ),
-        ],
-        description="Static education history. Do not alter.",
-    )
-
-    # Constraint: Must return at least 1 certification
-    certifications: List[CertificationItem] = Field(
-        ...,
-        min_length=1,
-        description="List of professional certifications. Must contain at least 1 item.",
-    )
-
-    # Constraint: Maximum of 2 experiences
-    experience: List[ExperienceItem] = Field(
-        ...,
-        max_length=2,
-        description="List of professional experience items. Maximum of 2 entries.",
-    )
-
-    # Constraint: Exactly 2 projects (min=2, max=2)
-    projects: List[ProjectItem] = Field(
-        ...,
-        min_length=2,
-        max_length=2,
-        description="List of technical projects. Exactly 2 entries are required.",
-    )
-
-    skills: SkillsSchema
-
-
-# --- Generate JSON Schema for Ollama ---
-ollama_json_schema = ResumeSchema.model_json_schema()
 
 
 user_data = {
@@ -259,20 +138,48 @@ user_data = {
         "languages": "C, Python, SQL, HTML, CSS, JavaScript",
         "frameworks": "React, Flask, FastAPI",
         "tools": "Git, Docker, Ollama, Twilio",
-        "libraries": "numpy, pandas",
+        "libraries": "numpy, pandas, ollama, google-genai",
+        "verbal_languages": "English (native), French (fluent), Tamil (native)",
+        "Finance & Business": "Equity research and valuation; retail discretionary trading; algorithmic trading system development",
     },
+    "awards": [
+        "HOSA Student Leadership Conference — CPR/FA (2024): 1st Place Nationwide",
+        "Canadian Parents for French — Orals (2025): 1st - National Champion",
+        "Fermat Mathematics Contest (2025): School Champion; Top 25% Nationally",
+        "Target Alpha Stock Pitch Competition (2023): 1st Place in Canada",
+    ],
 }
 
 
 def main():
 
-    job_description = input(
-        "Enter the job description you wish to generate a resume and cover letter for: "
-    )
+    CONTENT_GENERATION_MESSAGES = []
+
+    job_description = """
+
+    Investment Banking Summer Analyst - Infrastructure M&A Advisory - Summer 2027
+
+    About the job
+Our Firm
+
+Agentis Capital Advisors is a leading global financial advisor with a reputation for delivering unparalleled value and advice to its clients. The firm has been the recipient of numerous industry rewards in recent years, including 2024 P3 Awards Financial Advisor of the Year. Our guiding principles and ability to generate value for clients sets us apart. Agentis acts as a sell-side and buy-side advisor on a wide variety of global transactions including renewable power, energy, digital, transportation, and public-private partnerships. Our clients include leading infrastructure funds, pension funds, contractors, and governments.
+
+Agentis Capital Advisors is a business segment of Agentis Capital Partners, which operates a synergistic platform across four main business segments: Agentis Capital Partners (principal investments), Agentis Capital Advisors (financial advisory and asset management services), Agentis Capital Mining Partners (mining advisory), and Agentis Capital Markets (capital markets).
+
+The Opportunity
+
+The intern program includes a formal program of instruction in project finance, financial statement analysis, and financial modeling. Analyst interns are expected to demonstrate financial modeling capabilities through real-world applications and will be invited to work on active projects. You will be recognized and rewarded for your individual performance within a close-knit team and meritocratic culture. Upon successful completion of the internship, interns have the opportunity to be invited back to join Agentis in a full-time position.
+
+Participating in the execution of equity and debt offerings, mergers and acquisitions, public-private partnerships, and principal investments
+Assisting in the development of complex financial models for infrastructure transactions, including the use of macros and VBA programming
+Assisting in the management of due diligence processes, including managing third-party advisors
+Developing asset valuations using a variety of approaches
+    
+"""
 
     prompt_content = f"""
-    
-    You are an expert AI resume writer specializing in Applicant Tracking Systems (ATS) optimization. 
+
+    You are an expert AI resume writer specializing in Applicant Tracking Systems (ATS) optimization.
     Your task is to tailor the user's resume data to perfectly match a target job description.
 
     ### 1. TARGET JOB DESCRIPTION
@@ -282,43 +189,126 @@ def main():
     {json.dumps(user_data, indent=2)}
 
     CRITICAL FILTERING & LENGTH RULES:
-    1. EXPERIENCE FILTER: The user data contains multiple experiences. You must evaluate them and select EXACTLY the top 2 most relevant experiences for the job description. Discard the rest.
-    2. PROJECT FILTER: Select up to 3 of the most relevant projects. 
+    1. EXPERIENCE FILTER: The user data contains multiple experiences. You must evaluate them and select EXACTLY the top 2 most relevant experiences for the job description. Discard the rest. DO NOT make up new experiences, under any circumstances.
+    2. PROJECT FILTER: Select up to 3 of the most relevant projects.
     3. CERTIFICATION FILTER: Select up to 2 certifications.
     4. BULLET COUNT: Every single item in 'experience' and 'projects' must contain exactly 2 or 3 bullet points. Never provide 1 bullet point; never exceed 3 bullet points.
 
-    ### 3. CRITICAL STRUCTURAL CONSTRAINTS
+    CRITICAL STRUCTURAL CONSTRAINTS
     - **Output Schema:** You must adhere 100% to the provided JSON structural boundaries. Do not alter keys or nestings.
     - **Strict Bullet Count:** Generate exactly 2 or 3 bullet points for each experience item and project item. Never exceed 3 bullet points under any circumstance.
     - **Immutable Blocks:** Keep the "contact" and "education" blocks completely identical to the input data. Do not modify, add, or delete any characters within them.
-    - **LaTeX Safety:** Use plain text only. Do not use special characters (e.g., %, $, &, _, #) without proper text-only formatting. Avoid Markdown bolding (**) or italics (*) inside the string fields.
+    - **LaTeX Safety:** Use plain text only. Do not use special characters (e.g., %, $, &, _, #, etc.). Avoid Markdown bolding (**) or italics (*) inside the string fields.
 
-    ### 4. BULLET POINT CONTENT QUALITY
-    - **STAR/CAR Formula:** Write every bullet point using the Situation/Task/Context -> Action -> Result framework. 
+    BULLET POINT CONTENT QUALITY
+    - **STAR/CAR Formula:** Write every bullet point using the Situation/Task/Context -> Action -> Result framework.
     - **Impact First:** Start bullet points with strong action verbs and emphasize quantifiable metrics or technical outcomes wherever possible.
     - **ATS Optimization:** Seamlessly integrate highly relevant keywords and technical skills found in the target job description to maximize resume scannability.
+    - One bullet point must explain the project/experience itself
+
+    The tone of the resume should be natural, reflecting a positive, hard working, and disciplined person. DO NOT make up new experiences, under any circumstances.
 
     Return only the optimized JSON object following these rules.
 
     """
 
+    CONTENT_GENERATION_MESSAGES.append({"role": "user", "content": prompt_content})
+
     response = chat(
-        model="qwen3.5:9b",
-        messages=[
-            {"role": "user", "content": prompt_content},
-        ],
+        model="qwen3.5:9b-mlx",
+        messages=CONTENT_GENERATION_MESSAGES,
         think=False,
     )
 
     model_response = json.loads(response.message.content)
+    CONTENT_GENERATION_MESSAGES.append(
+        {"role": "assistant", "content": response.message.content}
+    )
 
-    print(json.dumps(model_response, indent=2))
+    print("Resume: \n", json.dumps(model_response, indent=2))
     generate_resume(model_response)
+
+    todays_date = datetime.now().strftime("%B %d, %Y")
+
+    cover_letter = {
+        "date": todays_date,
+        "subject_line": "Job Application for [Job Title]",
+        "recipient": {
+            "team": "Company Recruitment Team",
+            "company": "Company Name from Job Description",
+            "address_line_1": "Street Address or Remote if applicable",
+            "address_line_2": "City, State, Zip Code",
+        },
+        "content": {
+            "salutation": "Dear [Hiring Team / Company Name Team],",
+            "introduction": "A strong 2-3 sentence opening hook. State the role and why you are drawn to their technical mission.",
+            "body_paragraph_1": "Focus on your professional experience and core strengths. Highlight your work ethic, adaptability, and how you deliver impact.",
+            "body_paragraph_2": "Focus on technical execution. Highlight 1 or 2 of your key projects (like your local-first automation pipelines) and how your skills directly solve the problems outlined in the job description.",
+            "sign_off": "A professional sign-off phrase appropriate for this company culture (e.g., 'Sincerely,', 'Best regards,', 'Respectfully,')",
+        },
+    }
+
+    cover_letter_prompt = f"""
+    
+        Now, your task is to write a highly tailored, compelling cover letter based on the optimized resume data and the target job description.
+
+        ### 1. TONAL DIRECTIONS
+        The letter must sound natural, professional, and authentic. Avoid generic AI corporate fluff. 
+        Infuse the tone with a clear sense of grit, discipline, optimism, and passion for the specific engineering challenges mentioned.
+
+        ### 2. CRITICAL STRUCTURAL CONSTRAINTS
+        You must return ONLY a JSON object adhering exactly to this schema:
+        
+        {json.dumps(cover_letter, indent=2)}
+
+        ### 3. LATEX SAFETY & FORMATTING
+        - Use plain text only. DO NOT use unescaped LaTeX special characters (%, $, &, _, #). This will break the string, so DO NOT use them.
+        - Do not use Markdown formatting (**, *) inside the JSON fields.
+
+        Return only the optimized JSON object following these rules.
+    """
+
+    CONTENT_GENERATION_MESSAGES.append({"role": "user", "content": cover_letter_prompt})
+
+    test_prompt = {"role": "user", "content": cover_letter_prompt}
+
+    response = chat(
+        model="qwen3.5:9b-mlx",
+        messages=CONTENT_GENERATION_MESSAGES,
+        think=False,
+    )
+
+    model_response = json.loads(response.message.content)
+    # Enforce the exact current date in the payload python-side as a safety net
+    # model_response["date"] = todays_date
+
+    print("Cover Letter: \n", json.dumps(model_response, indent=2))
+    generate_cover_letter(model_response)
 
 
 def generate_resume(
     data, template_path="Template-Jakes-Resume.tex", output_tex="output_resume.tex"
 ):
+
+    edit_latex(data, template_path, output_tex)
+
+    # 4. Compile the .tex file into a PDF using pdflatex
+    compile_latex_to_pdf(output_tex)
+
+
+def generate_cover_letter(
+    data,
+    template_path="Template-Jakes-Cover-Letter.tex",
+    output_tex="output_cover_letter.tex",
+):
+
+    edit_latex(data, template_path, output_tex)
+
+    # 4. Compile the .tex file into a PDF using pdflatex
+    compile_latex_to_pdf(output_tex)
+
+
+def edit_latex(data, template_path, output_tex):
 
     # 1. Configure Jinja to use LaTeX-safe delimiters
     env = Environment(
@@ -338,9 +328,6 @@ def generate_resume(
     # 3. Write the filled-in LaTeX code to a new file
     with open(output_tex, "w") as f:
         f.write(rendered_tex)
-
-    # 4. Compile the .tex file into a PDF using pdflatex
-    compile_latex_to_pdf(output_tex)
 
 
 def compile_latex_to_pdf(tex_file_path, output_dir=None):

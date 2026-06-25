@@ -55,7 +55,7 @@ JOB_DETAILS = ""
 
 async def chat(MESSAGES=MESSAGES):
     response = await AsyncClient().chat(
-        model="qwen3.5:9b", messages=MESSAGES, think=False
+        model="qwen3.5:9b-mlx", messages=MESSAGES, think=False
     )
 
     return response.message.content
